@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github@latest"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_example"
+      }
+    },
+    "postgres": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "--network", "host", "-v", "/var/run/docker.sock:/var/run/docker.sock", "mcp/postgres"]
+    },
+    "internal-tools": {
+      "command": "/opt/company/bin/mcp-internal",
+      "args": []
+    },
+    "search": {
+      "url": "http://search.internal.example.com/sse"
+    },
+    "weather": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-weather@1.2.0"]
+    }
+  }
+}
