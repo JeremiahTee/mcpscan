@@ -1,5 +1,5 @@
 <!-- archdoc
-verified_at: PENDING
+verified_at: e717d1ca683a1ddf3257fe0238223caff298e8cc
 covers: main.go config.go scanner.go rule.go rules.go report.go rules_test.go go.mod examples/sample.mcp.json
 -->
 # mcpscan: architecture
