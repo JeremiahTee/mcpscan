@@ -32,6 +32,7 @@ type Report struct {
 	OverallBand  string         `json:"overall_band"`
 	Servers      []ServerReport `json:"servers"`
 	Warnings     []string       `json:"warnings,omitempty"`
+	Collisions   []Collision    `json:"collisions,omitempty"`
 }
 
 // score converts findings into a 0-100 risk score. Weights are summed and capped;

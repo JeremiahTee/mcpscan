@@ -17,6 +17,7 @@ import (
 type Config struct {
 	MCPServers map[string]Server  `json:"mcpServers"`
 	Projects   map[string]Project `json:"projects"`
+	Repo       *ProjectFile       `json:"-"`
 }
 
 // Project is one entry under "projects"; only its servers are modeled.
