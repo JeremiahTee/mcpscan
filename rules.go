@@ -100,7 +100,7 @@ func ruleCommand(name string, s Server) []Finding {
 		out = append(out, Finding{
 			Rule: "UNPINNED_PACKAGE", Severity: Low,
 			Title:  "Dependency is not version-pinned",
-			Detail: "Package " + pkg + " has no explicit version (or uses @latest); the code that runs can change silently between launches.",
+			Detail: "Package " + pkg + " does not pin one exact version (no version, @latest or another tag, or a range such as >= or ^); the code that runs can change silently between launches.",
 		})
 	}
 	return out
@@ -188,23 +188,104 @@ func ruleDataSensitive(name string, s Server) []Finding {
 
 // --- shared helpers ---
 
+// unpinnedPackage returns the package spec a launcher fetches when that spec
+// does not pin one exact version. npx specs are name@version (the name may be
+// @scope/name); uvx and `uv tool run` also accept pip-style specifiers, where
+// only == and === pin; >=, ~=, <, != and a bare name are ranges. uvx --from
+// names the package explicitly, so the positional arg is then only a command.
 func unpinnedPackage(base string, args []string) (string, bool) {
-	if base != "npx" && base != "uvx" {
+	switch {
+	case base == "npx":
+		spec := firstPositional(args, npxValueFlags)
+		if spec == "" || npmPinned(spec) {
+			return "", false
+		}
+		return spec, true
+	case base == "uv" && len(args) >= 2 && args[0] == "tool" && args[1] == "run":
+		args = args[2:]
+	case base == "uvx":
+	default:
 		return "", false
 	}
-	for _, a := range args {
+	spec := flagValue(args, "--from")
+	if spec == "" {
+		spec = firstPositional(args, uvValueFlags)
+	}
+	if spec == "" || pythonPinned(spec) {
+		return "", false
+	}
+	return spec, true
+}
+
+// Flags whose next arg is a value, not the package.
+var (
+	npxValueFlags = map[string]bool{"-p": true, "--package": true, "-c": true, "--call": true}
+	uvValueFlags  = map[string]bool{
+		"--from": true, "--with": true, "-w": true, "--with-requirements": true,
+		"--with-editable": true, "--python": true, "-p": true, "--index": true,
+		"--index-url": true, "--extra-index-url": true, "--default-index": true,
+		"--constraints": true, "-c": true, "--overrides": true,
+	}
+)
+
+// firstPositional returns the first arg that is neither a flag nor the value
+// of a flag in valueFlags.
+func firstPositional(args []string, valueFlags map[string]bool) string {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
 		if strings.HasPrefix(a, "-") {
+			if valueFlags[a] {
+				i++
+			}
 			continue
 		}
-		if strings.HasSuffix(a, "@latest") {
-			return a, true
-		}
-		if !strings.Contains(strings.TrimPrefix(a, "@"), "@") {
-			return a, true
-		}
-		return "", false
+		return a
 	}
-	return "", false
+	return ""
+}
+
+// flagValue returns the value of `flag v` or `flag=v`, or "".
+func flagValue(args []string, flag string) string {
+	for i, a := range args {
+		if a == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(a, flag+"=") {
+			return strings.TrimPrefix(a, flag+"=")
+		}
+	}
+	return ""
+}
+
+// exactVersion is one concrete version: 1.2.3, v1.2, 1.2.3-beta.1, 1.2.3+build.
+// Dist-tags (latest, next) and ranges (^1, ~1, 1.x, >=1) are not exact.
+var exactVersion = regexp.MustCompile(`^v?\d+(\.\d+)*([-+.][0-9A-Za-z.-]+)?$`)
+
+// npmPinned reports whether an npm spec carries an exact version after the
+// name. A leading @ belongs to the scope, not to a version.
+func npmPinned(spec string) bool {
+	i := strings.LastIndex(spec, "@")
+	if i <= 0 {
+		return false
+	}
+	v := spec[i+1:]
+	return !strings.ContainsAny(v, "xX*") && exactVersion.MatchString(v)
+}
+
+// pythonPinned reports whether a uv/pip spec pins one version: name==1.2,
+// name===1.2, or uv's name@1.2. Extras ([cli]) are allowed before the pin.
+func pythonPinned(spec string) bool {
+	if i := strings.Index(spec, "=="); i > 0 {
+		v := strings.TrimPrefix(spec[i+2:], "=")
+		if strings.ContainsAny(v, ",;*") { // ==1.*, or a second specifier
+			return false
+		}
+		return v != ""
+	}
+	if strings.ContainsAny(spec, "<>!~=") {
+		return false
+	}
+	return npmPinned(spec)
 }
 
 func lastPathElement(cmd string) string {
