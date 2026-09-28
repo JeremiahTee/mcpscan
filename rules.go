@@ -75,7 +75,14 @@ func ruleCommand(name string, s Server) []Finding {
 	}
 	var out []Finding
 	base := lastPathElement(s.Command)
-	if !knownLaunchers[base] {
+	// A launcher script is read (never run): a Keychain-reading launcher is good
+	// practice, not an unknown binary; any literal secret inside is still flagged.
+	var li launcherInfo
+	if script := launcherScript(s); script != "" {
+		li, _ = inspectLauncher(script)
+		out = append(out, li.findings...)
+	}
+	if !knownLaunchers[base] && !li.keychain {
 		out = append(out, Finding{
 			Rule: "ARBITRARY_BINARY", Severity: Medium,
 			Title:  "Launches a non-standard executable",
