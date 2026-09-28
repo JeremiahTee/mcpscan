@@ -1,12 +1,12 @@
 <!-- archdoc
 verified_at: e717d1ca683a1ddf3257fe0238223caff298e8cc
-covers: main.go config.go scanner.go rule.go rules.go report.go rules_test.go go.mod examples/sample.mcp.json
+covers: main.go config.go scanner.go rule.go rules.go launcher.go report.go rules_test.go scope_test.go launcher_test.go go.mod examples/sample.mcp.json testdata/scopes.synthetic.json testdata/projects-only.synthetic.json
 -->
 # mcpscan: architecture
 
 ## Purpose
 
-A single-package Go CLI (`package main`, module `github.com/JeremiahTee/mcpscan`, `go 1.25.0`, one dependency `golang.org/x/sync`) that statically reads Claude Desktop / Claude Code style MCP configs (a JSON object with an `mcpServers` map) and emits an explainable, scored risk report per server. It never launches a server; it looks only at `command`, `args`, `env` and `url`.
+A single-package Go CLI (`package main`, module `github.com/JeremiahTee/mcpscan`, `go 1.25.0`, one dependency `golang.org/x/sync`) that statically reads Claude Desktop / Claude Code style MCP configs (a JSON object with an `mcpServers` map, plus the per-project `projects.<path>.mcpServers` maps of `~/.claude.json`) and emits an explainable, scored risk report per server. It never launches a server; it looks at `command`, `args`, `env` and `url`, and reads (never runs) a launcher script the command points at.
 
 ## Flow
 
@@ -18,8 +18,12 @@ A single-package Go CLI (`package main`, module `github.com/JeremiahTee/mcpscan`
         |  per path: LoadConfig -> *Config              config.go
         v
  Assess(source, cfg)                                    report.go
-        |  per server: Evaluate(name, srv)              rule.go
+        |  cfg.Entries(): user scope + local scope       config.go
+        |  group by name, merge identical definitions,
+        |  SCOPE_DUPLICATE / SCOPE_SHADOW + warnings
+        |  per definition: Evaluate(name, srv)          rule.go
         |     runs every registered Rule.Check          rules.go
+        |     COMMAND reads the launcher script         launcher.go
         v
  findings -> score (sum of weights, cap 100) -> band    report.go
         |  servers sorted riskiest-first; overall = worst server
@@ -34,17 +38,21 @@ A single-package Go CLI (`package main`, module `github.com/JeremiahTee/mcpscan`
 | File | Job |
 |---|---|
 | `main.go` | Flags (`-json`, `-min-severity`, `-fail-on`, `-concurrency`, `-list-rules`), glob expansion, output, exit codes (1 error, 2 no paths, 3 fail-on hit). |
-| `config.go` | `Config` / `Server` structs; `LoadConfig` reads + unmarshals, errors if `mcpServers` is empty; `IsRemote` = `URL != ""`. |
+| `config.go` | `Config` / `Project` / `Server` structs; scopes `user` (top-level `mcpServers`) and `local` (`projects.<path>.mcpServers`); `Entries` flattens both deterministically; `LoadConfig` errors only if no scope has a server; `IsRemote` = `URL != ""`. |
 | `scanner.go` | `Scanner` with functional option `WithConcurrency` (default 8, floor 1); `ScanFiles` fan-out/fan-in, first error cancels the rest; `WorstBand`. |
 | `rule.go` | `Severity` (Info/Low/Medium/High) and weights (0/10/20/40), `Finding`, `Rule`, the `registry`, `Register`, `Rules`, `Evaluate`. |
+| `launcher.go` | Launcher-script inspection: `launcherScript` picks the script (non-launcher command, or first arg of sh/bash/zsh); `inspectLauncher` reads it (absolute or `~/`, regular file, <= 256 KiB, no NUL bytes) for a Keychain read and literal secrets. Never executes it. |
 | `rules.go` | The concrete checks, registered in `init()`, plus helpers (`unpinnedPackage`, `lastPathElement`, `hasArg`, `hasArgValue`). |
-| `report.go` | `ServerReport` / `Report`, `score`, `band`, `Assess`, text renderer `WriteText`. |
+| `report.go` | `ServerReport` (with `Origins`) / `Report` (with `Warnings`), `score`, `band`, `Assess` (scope grouping, `scopeFindings`), text renderer `WriteText` (warnings, `from:` line only when a local scope exists, GOOD findings always shown). |
 | `rules_test.go` | 7 unit tests: six rule cases via `Evaluate`, plus `score`/`band`. |
+| `scope_test.go` | 8 tests: project-scoped loading, origins, merge, shadow warning, cross-project non-collision, text output. |
+| `launcher_test.go` | 6 tests: Keychain launcher, literal secret (value never in output), token shape, plain script, bash arg, missing path. Scripts written to `t.TempDir()`. |
+| `testdata/*.synthetic.json` | Synthetic scope fixtures (fake `/fake/...` paths, no real values). |
 | `examples/sample.mcp.json` | Six-server sample config that trips most rules (contains a placeholder token value, not a real secret). |
 
 ## Rules
 
-Six rules are registered in `rules.go` `init()`; they emit eleven finding ids.
+Six rules are registered in `rules.go` `init()`; they emit thirteen finding ids.
 
 | Registered rule | Finding id (severity) | Meaning |
 |---|---|---|
@@ -60,15 +68,17 @@ Six rules are registered in `rules.go` `init()`; they emit eleven finding ids.
 | `FILESYSTEM` | `BROAD_FS_ACCESS` (High / Medium) | Server name contains `filesystem`/`files` and an arg is `/`, `~`, or a top-level `/Users/x` or `/home/x` (High); or more than four path args (Medium). |
 | `DATA_SENSITIVE` | `DATA_SENSITIVE` (Low) | Server name contains a keyword such as github, slack, postgres, stripe, aws. |
 
+Assess also adds, outside the registry: `SCOPE_DUPLICATE` (Info) when one identical definition sits in user and local scope, and `SCOPE_SHADOW` (Low) when a local definition differs from the user one of the same name (Claude Code resolves local > project > user silently). Both add a report-level warning. The same name in two different projects is not a collision.
+
 Scoring: bands are `critical` >= 60, `high` >= 40, `medium` >= 20, `low` > 0, else `clean`.
 
 ## How to run and test
 
-These commands were not run for this draft (the brief was read-only).
+`go test`, `go vet` and `go run .` were run on 2026-09-28 (branch `overnight/project-scope`).
 
 ```bash
 cd ~/Desktop/repos/mcpscan
-go test ./...                              # the 7 tests in rules_test.go
+go test ./...                              # 21 tests (rules, scope, launcher)
 go vet ./...
 go build .                                 # binary ./mcpscan (gitignored)
 go run . examples/sample.mcp.json
@@ -86,5 +96,7 @@ go run . -list-rules
 - `FILESYSTEM` and `DATA_SENSITIVE` key off the server's name, so a filesystem server under another name gets through.
 - The secret regex ends in `\b`, so names like `ACCESS_TOKEN_ID` probably don't match (`_` is a word char) [UNVERIFIED, not tested].
 - Findings with equal severity come out in map-iteration order (env keys, servers before the sort), so text output may differ between runs [UNVERIFIED].
-- There are no tests for `main.go`, `scanner.go` (concurrency, cancellation) or `WriteText`.
+- There are no tests for `main.go` or `scanner.go` (concurrency, cancellation); `WriteText` is covered only by the scope tests.
+- `.mcp.json` (project scope) is not merged with `~/.claude.json`; pass it as a separate path. Shadowing between `.mcp.json` and the other scopes is not detected.
+- Launcher inspection reads only the script the config names; a script that sources another file is not followed.
 - The analysis is static only: it never sees runtime behaviour or real permission scopes (the README's own Limitations section says so).

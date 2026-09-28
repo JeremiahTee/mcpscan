@@ -2,7 +2,7 @@
 
 A small, explainable static risk scanner for **Model Context Protocol (MCP)** server configurations.
 
-Agents are only as safe as the tools they can reach. `mcpscan` reads a Claude Desktop / Claude Code style config (`mcpServers`) and, for each connected server, flags where the agent's tool surface is **over-privileged or exposed** — then explains *why*, with a score you can audit rather than trust blindly.
+Agents are only as safe as the tools they can reach. `mcpscan` reads a Claude Desktop / Claude Code style config (`mcpServers`, including the per-project `projects.<path>.mcpServers` in `~/.claude.json`) and, for each connected server, flags where the agent's tool surface is **over-privileged or exposed** — then explains *why*, with a score you can audit rather than trust blindly.
 
 ```
 $ mcpscan ~/Library/Application\ Support/Claude/claude_desktop_config.json
@@ -53,10 +53,18 @@ mcpscan -list-rules                      # list registered rules
 | `INSECURE_TRANSPORT` | High | A remote server reached over cleartext `http://` |
 | `REMOTE_EXEC_ON_LAUNCH` | Medium | `npx -y` fetching and executing a package at every start |
 | `DOCKER_HOST_NETWORK` | Medium | `--network host` removing network isolation |
+| `SECRET_IN_LAUNCHER` | High | A literal credential inside the launcher script a server runs (value never printed) |
 | `ARBITRARY_BINARY` | Medium | A non-standard launcher binary of unclear provenance |
 | `REMOTE_TRANSPORT` | Medium | Any server reached across the network |
 | `UNPINNED_PACKAGE` | Low | Unpinned / `@latest` dependency (silent supply-chain drift) |
 | `DATA_SENSITIVE` | Low | Server name implies access to sensitive data (github, postgres, slack…) |
+| `SCOPE_SHADOW` | Low | A project (local-scope) server silently replaces a user-scope server of the same name |
+| `SCOPE_DUPLICATE` | Info | The same definition is declared in both user and local scope |
+| `KEYCHAIN_LAUNCHER` | Good | Launcher script reads its secret from the macOS Keychain at spawn (`security find-generic-password`): scored as good practice, not an unknown binary |
+
+### Scopes
+
+Claude Code keeps servers in `~/.claude.json` at two levels: top-level `mcpServers` (user scope) and `projects.<path>.mcpServers` (local scope, loaded only in that project). `mcpscan` scans both, labels each server with where it came from, reports an identical definition once, and warns when the same name exists in both scopes, because the client resolves names by precedence (local > project > user) and hides the loser without telling you.
 
 The score is a capped sum of finding weights (High 40 / Medium 20 / Low 10), banded `clean → low → medium → high → critical`. A config is scored by its **worst** server — you're only as safe as your most-exposed connection.
 
@@ -67,6 +75,7 @@ Deliberately small and extensible:
 - **Rule registry** — each rule is a `Rule{ID, Check}` that self-registers via `init()` (`rule.go` / `rules.go`). Adding a signal means adding a rule, not editing the engine (open/closed).
 - **Concurrent, cancellable scanning** — multiple configs are assessed in parallel via a bounded `errgroup` with `context` cancellation; each goroutine writes only its own result slot, so no locking (`scanner.go`).
 - **Functional options** — `NewScanner(WithConcurrency(n))` keeps the simple case simple.
+- **Launcher inspection** — a script launcher is read as text (bounded, never executed) so a Keychain-at-spawn wrapper is recognised and a hard-coded secret in it is still caught (`launcher.go`).
 - **`io.Writer`-based rendering** — text and JSON reporters share one report model (`report.go`).
 
 ## Limitations (read this)
