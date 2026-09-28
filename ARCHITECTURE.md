@@ -1,5 +1,5 @@
 <!-- archdoc
-verified_at: e717d1ca683a1ddf3257fe0238223caff298e8cc
+verified_at: bc1fe68595b69ae67d16676c0da16702c82287c3
 covers: main.go config.go scanner.go rule.go rules.go launcher.go report.go rules_test.go scope_test.go launcher_test.go go.mod examples/sample.mcp.json testdata/scopes.synthetic.json testdata/projects-only.synthetic.json
 -->
 # mcpscan: architecture
