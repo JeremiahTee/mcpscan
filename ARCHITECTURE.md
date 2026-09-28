@@ -1,12 +1,12 @@
 <!-- archdoc
 verified_at: 05af8767539e4fad0c3130b881eb33367b3b48ef
-covers: main.go config.go scanner.go rule.go rules.go launcher.go project.go report.go rules_test.go scope_test.go launcher_test.go pin_test.go project_test.go go.mod examples/sample.mcp.json testdata/scopes.synthetic.json testdata/projects-only.synthetic.json
+covers: main.go config.go scanner.go rule.go rules.go launcher.go project.go report.go rules_test.go scope_test.go launcher_test.go pin_test.go project_test.go redact_test.go go.mod examples/sample.mcp.json testdata/scopes.synthetic.json testdata/projects-only.synthetic.json
 -->
 # mcpscan: architecture
 
 ## Purpose
 
-A single-package Go CLI (`package main`, module `github.com/JeremiahTee/mcpscan`, `go 1.25.0`, one dependency `golang.org/x/sync`) that statically reads Claude Desktop / Claude Code style MCP configs (a JSON object with an `mcpServers` map, plus the per-project `projects.<path>.mcpServers` maps of `~/.claude.json`, and optionally a repository's `.mcp.json` via `-project`) and emits an explainable, scored risk report per server. It never launches a server; it looks at `command`, `args`, `env` and `url`, and reads (never runs) a launcher script the command points at.
+A single-package Go CLI (`package main`, module `github.com/JeremiahTee/mcpscan`, `go 1.25.0`, one dependency `golang.org/x/sync`) that statically reads Claude Desktop / Claude Code style MCP configs (a JSON object with an `mcpServers` map, plus the per-project `projects.<path>.mcpServers` maps of `~/.claude.json`, and optionally a repository's `.mcp.json` via `-project`) and emits an explainable, scored risk report per server. It never launches a server; it looks at `command`, `args`, `env` and `url`, and reads (never runs) a launcher script the command points at. Output never carries a config's secret values: env vars are named by key only, and any URL it prints (a remote `url`, a URL-shaped package spec) goes through `sanitizeURL` first.
 
 ## Flow
 
@@ -45,13 +45,14 @@ A single-package Go CLI (`package main`, module `github.com/JeremiahTee/mcpscan`
 | `rule.go` | `Severity` (Info/Low/Medium/High) and weights (0/10/20/40), `Finding`, `Rule`, the `registry`, `Register`, `Rules`, `Evaluate`. |
 | `launcher.go` | Launcher-script inspection: `launcherScript` picks the script (non-launcher command, or first arg of sh/bash/zsh); `inspectLauncher` reads it (absolute or `~/`, regular file, <= 256 KiB, no NUL bytes) for a Keychain read and literal secrets. Never executes it. |
 | `project.go` | Project scope: `ScopeProject`, `ProjectFile`, `LoadProjectFile` (abs + symlink-resolved repo path, reads `<repo>/.mcp.json`), `WithProjectRepo`, `Collision`, `collisions` (per name and project context; user loads everywhere, local and project only in their path; winner by `scopeRank` local 3 > project 2 > user 1), `projectFindings`. |
-| `rules.go` | The concrete checks, registered in `init()`, plus helpers (`unpinnedPackage` with `npmPinned` / `pythonPinned` / `firstPositional` / `flagValue`, `lastPathElement`, `hasArg`, `hasArgValue`). |
+| `rules.go` | The concrete checks, registered in `init()`, plus helpers (`sanitizeURL` / `redactSpec`, `unpinnedPackage` with `npmPinned` / `pythonPinned` / `firstPositional` / `flagValue`, `lastPathElement`, `hasArg`, `hasArgValue`). |
 | `report.go` | `ServerReport` (with `Origins`) / `Report` (with `Warnings`, `Collisions`), `score`, `band`, `Assess` (scope grouping, `scopeFindings`), text renderer `WriteText` (warnings, `from:` line only when a non-user scope exists, GOOD findings always shown). |
 | `rules_test.go` | 7 unit tests: six rule cases via `Evaluate`, plus `score`/`band`. |
 | `scope_test.go` | 8 tests: project-scoped loading, origins, merge, shadow warning, cross-project non-collision, text output. |
 | `pin_test.go` | 2 tests (25 table subtests): npx/uvx/`uv tool run` version pins, plus the fixture's `beta` uvx `==` pin. |
 | `project_test.go` | 12 tests: `.mcp.json` loading, project vs user, local vs project, other-project non-collision, identical duplicate, no overlap, user-vs-local recorded, text output, Scanner option, JSON severity level. |
 | `launcher_test.go` | 6 tests: Keychain launcher, literal secret (value never in output), token shape, plain script, bash arg, missing path. Scripts written to `t.TempDir()`. |
+| `redact_test.go` | 4 tests: a fake secret in a remote URL's query, fragment or userinfo, and in a `uvx --from git+https://user:pw@...` spec, never appears in text or JSON output while host/port/path do; `sanitizeURL` table (ambiguous `@`, unparseable, opaque); a commented-out `security find-generic-password` line earns no `KEYCHAIN_LAUNCHER`. Fake values built at runtime. |
 | `testdata/*.synthetic.json` | Synthetic scope fixtures (fake `/fake/...` paths, no real values). |
 | `examples/sample.mcp.json` | Six-server sample config that trips most rules (contains a placeholder token value, not a real secret). |
 
@@ -62,11 +63,11 @@ Six rules are registered in `rules.go` `init()`; they emit thirteen finding ids.
 | Registered rule | Finding id (severity) | Meaning |
 |---|---|---|
 | `SECRET_IN_ENV` | `SECRET_IN_ENV` (High) | An env var name matches the secret regex (token, secret, password, api key, access key, credential, private key, pat). |
-| `TRANSPORT` | `REMOTE_TRANSPORT` (Medium) | Server has a `url`, so data crosses the local trust boundary. |
+| `TRANSPORT` | `REMOTE_TRANSPORT` (Medium) | Server has a `url`, so data crosses the local trust boundary. The detail prints `sanitizeURL(url)`: scheme, host (with port) and path; userinfo dropped; a query or fragment shown as `<redacted>`; a URL that does not parse, lacks scheme or host, is opaque, or has an `@` not parsed as userinfo prints `<unparseable URL>`. |
 | | `INSECURE_TRANSPORT` (High) | That `url` starts with `http://`. |
 | `COMMAND` | `ARBITRARY_BINARY` (Medium) | Command basename is not in the launcher list (npx, node, python, python3, uv, uvx, docker, deno, bun). |
 | | `REMOTE_EXEC_ON_LAUNCH` (Medium) | `npx` with `-y` / `--yes`. |
-| | `UNPINNED_PACKAGE` (Low) | The package spec of `npx`, `uvx` or `uv tool run` (first positional, skipping values of known flags; for uv, `--from` wins) does not pin one exact version. npx: `name@1.2.3` (scope `@` ignored) pins; tags (`@latest`, `@next`) and ranges (`^`, `~`, `x`, `*`) do not. uv: `==` / `===` pin (extras allowed, `==1.*` does not), `name@1.2` pins, `>=`, `~=`, `<`, `!=` and a bare name do not. Docker images are not assessed. |
+| | `UNPINNED_PACKAGE` (Low) | The package spec of `npx`, `uvx` or `uv tool run` (first positional, skipping values of known flags; for uv, `--from` wins) does not pin one exact version. npx: `name@1.2.3` (scope `@` ignored) pins; tags (`@latest`, `@next`) and ranges (`^`, `~`, `x`, `*`) do not. uv: `==` / `===` pin (extras allowed, `==1.*` does not), `name@1.2` pins, `>=`, `~=`, `<`, `!=` and a bare name do not. Docker images are not assessed. A URL inside the printed spec is passed through `redactSpec` (prefix such as `git+` kept, URL sanitized). |
 | `DOCKER` | `DOCKER_PRIVILEGED` (High) | `--privileged` in args. |
 | | `DOCKER_HOST_NETWORK` (Medium) | `--network host` (as two separate args). |
 | | `DOCKER_SENSITIVE_MOUNT` (High) | `-v`/`--volume` of `/`, `/etc*`, or `/var/run/docker.sock*`. |
@@ -79,11 +80,11 @@ Scoring: bands are `critical` >= 60, `high` >= 40, `medium` >= 20, `low` > 0, el
 
 ## How to run and test
 
-`go test`, `go vet` and `go run .` were run on 2026-09-28 (branch `overnight/project-scope`).
+`go test`, `go test -race` and `go vet` were run on 2026-09-28 (branch `fix/redact-remote-url`).
 
 ```bash
 cd ~/Desktop/repos/mcpscan
-go test ./...                              # 35 tests (rules, scope, launcher, pin, project)
+go test ./...                              # 39 tests (rules, scope, launcher, pin, project, redact)
 go test -race ./...
 go vet ./...
 go build .                                 # binary ./mcpscan (gitignored)
