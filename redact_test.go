@@ -27,7 +27,10 @@ func renderBoth(t *testing.T, cfg *Config) (string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return buf.String(), string(raw)
+	// encoding/json escapes <, > and & (as main.go's encoder does); undo that so
+	// the checks read the text a consumer of the JSON would see.
+	js := strings.NewReplacer(`\u003c`, "<", `\u003e`, ">", `\u0026`, "&").Replace(string(raw))
+	return buf.String(), js
 }
 
 func assertRedacted(t *testing.T, out, kind string, secrets, keep []string) {
@@ -46,7 +49,7 @@ func assertRedacted(t *testing.T, out, kind string, secrets, keep []string) {
 
 func TestRemoteURLSecretsNeverPrinted(t *testing.T) {
 	cfg := &Config{MCPServers: map[string]Server{
-		"fake-query": {URL: "https://query.example.invalid/v1/sse?api_key=" + fakeQuerySecret + "&x=1#frag-" + fakeQuerySecret},
+		"fake-query":    {URL: "https://query.example.invalid/v1/sse?api_key=" + fakeQuerySecret + "&x=1#frag-" + fakeQuerySecret},
 		"fake-userinfo": {URL: "https://fakeuser:" + fakeUserinfoSecret + "@userinfo.example.invalid:8443/mcp"},
 	}}
 	text, js := renderBoth(t, cfg)

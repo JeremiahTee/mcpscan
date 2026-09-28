@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -56,7 +57,7 @@ func ruleTransport(name string, s Server) []Finding {
 	out := []Finding{{
 		Rule: "REMOTE_TRANSPORT", Severity: Medium,
 		Title:  "Remote server over the network",
-		Detail: "Reached at " + s.URL + ". Requests and any data they carry cross the local trust boundary to a third party; confirm the endpoint is owned and TLS-terminated.",
+		Detail: "Reached at " + sanitizeURL(s.URL) + ". Requests and any data they carry cross the local trust boundary to a third party; confirm the endpoint is owned and TLS-terminated.",
 	}}
 	if strings.HasPrefix(strings.ToLower(s.URL), "http://") {
 		out = append(out, Finding{
@@ -100,7 +101,7 @@ func ruleCommand(name string, s Server) []Finding {
 		out = append(out, Finding{
 			Rule: "UNPINNED_PACKAGE", Severity: Low,
 			Title:  "Dependency is not version-pinned",
-			Detail: "Package " + pkg + " does not pin one exact version (no version, @latest or another tag, or a range such as >= or ^); the code that runs can change silently between launches.",
+			Detail: "Package " + redactSpec(pkg) + " does not pin one exact version (no version, @latest or another tag, or a range such as >= or ^); the code that runs can change silently between launches.",
 		})
 	}
 	return out
@@ -187,6 +188,51 @@ func ruleDataSensitive(name string, s Server) []Finding {
 }
 
 // --- shared helpers ---
+
+// unparseableURL stands in for a URL that cannot be split safely into parts.
+const unparseableURL = "<unparseable URL>"
+
+// sanitizeURL renders a URL for output without anything that may carry a
+// credential: scheme, host (with port) and path are kept; userinfo is dropped;
+// a query or fragment becomes <redacted>. A URL that does not parse, or whose
+// "@" the parser did not read as userinfo (an unescaped # / ? or / in a
+// password shifts it, and part of the secret would be taken as the host), is
+// replaced whole: printing any part of it could print the secret.
+func sanitizeURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" || u.Opaque != "" {
+		return unparseableURL
+	}
+	if u.User == nil && strings.Contains(raw, "@") {
+		return unparseableURL
+	}
+	out := u.Scheme + "://" + u.Host + u.EscapedPath()
+	if u.RawQuery != "" || u.ForceQuery {
+		out += "?<redacted>"
+	}
+	if u.Fragment != "" || u.RawFragment != "" || strings.HasSuffix(raw, "#") {
+		out += "#<redacted>"
+	}
+	return out
+}
+
+// redactSpec sanitizes a URL embedded in a package spec (git+https://...,
+// name @ https://...), keeping any text before the URL's scheme.
+func redactSpec(spec string) string {
+	i := strings.Index(spec, "://")
+	if i < 0 {
+		return spec
+	}
+	start := i
+	for start > 0 && isSchemeChar(spec[start-1]) {
+		start--
+	}
+	return spec[:start] + sanitizeURL(spec[start:])
+}
+
+func isSchemeChar(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.'
+}
 
 // unpinnedPackage returns the package spec a launcher fetches when that spec
 // does not pin one exact version. npx specs are name@version (the name may be
