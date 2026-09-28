@@ -40,6 +40,7 @@ mcpscan -json config.json                # machine-readable output
 mcpscan -min-severity medium config.json # hide low/info noise
 mcpscan -fail-on high config.json        # exit non-zero for CI gating
 mcpscan -list-rules                      # list registered rules
+mcpscan -project ~/code/app ~/.claude.json # compare a repo's .mcp.json against user + local scope
 ```
 
 ## What it checks
@@ -56,15 +57,18 @@ mcpscan -list-rules                      # list registered rules
 | `SECRET_IN_LAUNCHER` | High | A literal credential inside the launcher script a server runs (value never printed) |
 | `ARBITRARY_BINARY` | Medium | A non-standard launcher binary of unclear provenance |
 | `REMOTE_TRANSPORT` | Medium | Any server reached across the network |
-| `UNPINNED_PACKAGE` | Low | Unpinned / `@latest` dependency (silent supply-chain drift) |
+| `UNPINNED_PACKAGE` | Low | npx/uvx package without one exact version: no version, `@latest` or another tag, or a range (`>=`, `~=`, `^`). `pkg@1.2.3`, `@scope/pkg@1.2.3`, `pkg==1.2` and `--from pkg==1.2` count as pinned |
 | `DATA_SENSITIVE` | Low | Server name implies access to sensitive data (github, postgres, slack…) |
-| `SCOPE_SHADOW` | Low | A project (local-scope) server silently replaces a user-scope server of the same name |
-| `SCOPE_DUPLICATE` | Info | The same definition is declared in both user and local scope |
+| `SCOPE_SHADOW` | Low | A local-scope or `.mcp.json` server silently replaces a lower-precedence server of the same name |
+| `SCOPE_DUPLICATE` | Info | The same definition is declared in more than one scope |
+| `SCOPE_SHADOWED` | Info | A `.mcp.json` server never runs because a local-scope server of the same name wins |
 | `KEYCHAIN_LAUNCHER` | Good | Launcher script reads its secret from the macOS Keychain at spawn (`security find-generic-password`): scored as good practice, not an unknown binary |
 
 ### Scopes
 
 Claude Code keeps servers in `~/.claude.json` at two levels: top-level `mcpServers` (user scope) and `projects.<path>.mcpServers` (local scope, loaded only in that project). `mcpscan` scans both, labels each server with where it came from, reports an identical definition once, and warns when the same name exists in both scopes, because the client resolves names by precedence (local > project > user) and hides the loser without telling you.
+
+Project scope lives in a repository's `.mcp.json`. Pass the repo with `-project <path>` and `mcpscan` reads `<path>/.mcp.json`, assesses its servers next to each config, and reports every name that is declared in more than one scope loading in that repo: user scope (everywhere), the `.mcp.json`, and the local scope stored under that repo's path. Each collision is labelled with its scopes in precedence order and the one that wins (text warning, and `collisions` in `-json`). A local server stored for a different project is not a collision.
 
 The score is a capped sum of finding weights (High 40 / Medium 20 / Low 10), banded `clean → low → medium → high → critical`. A config is scored by its **worst** server — you're only as safe as your most-exposed connection.
 
