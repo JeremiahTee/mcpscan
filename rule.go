@@ -45,6 +45,7 @@ type Finding struct {
 	Level    string   `json:"severity"`
 	Title    string   `json:"title"`
 	Detail   string   `json:"detail"`
+	Good     bool     `json:"good,omitempty"`
 }
 
 // Rule is one auditable check against a single MCP server. Rules are the unit of

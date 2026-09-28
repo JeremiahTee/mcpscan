@@ -1,0 +1,25 @@
+{
+  "_comment": "Synthetic fixture: fake paths, fake servers, no real values.",
+  "mcpServers": {
+    "alpha": { "command": "npx", "args": ["-y", "fake-alpha-mcp@1.0.0"] },
+    "shared-same": { "command": "node", "args": ["/fake/opt/shared/index.js"] },
+    "shared-diff": { "command": "node", "args": ["/fake/opt/shared-diff/v1.js"] }
+  },
+  "projects": {
+    "/fake/home/proj-one": {
+      "mcpServers": {
+        "beta": { "command": "uvx", "args": ["fake-beta-mcp==0.1.0"] },
+        "shared-same": { "command": "node", "args": ["/fake/opt/shared/index.js"] },
+        "shared-diff": { "command": "node", "args": ["/fake/opt/shared-diff/v2.js"] },
+        "twin": { "command": "node", "args": ["/fake/opt/twin-a.js"] }
+      }
+    },
+    "/fake/home/proj-two": {
+      "mcpServers": {
+        "twin": { "command": "node", "args": ["/fake/opt/twin-b.js"] }
+      }
+    },
+    "/fake/home/proj-empty": { "mcpServers": {} },
+    "/fake/home/proj-none": { "allowedTools": [] }
+  }
+}

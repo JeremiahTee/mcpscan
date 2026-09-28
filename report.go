@@ -13,6 +13,13 @@ type ServerReport struct {
 	Score     int       `json:"risk_score"`
 	Band      string    `json:"risk_band"`
 	Findings  []Finding `json:"findings"`
+	Origins   []Origin  `json:"origins,omitempty"`
+}
+
+// Origin (stub).
+type Origin struct {
+	Scope   string `json:"scope"`
+	Project string `json:"project,omitempty"`
 }
 
 // Report is the full scan result across every server in a config.
@@ -21,6 +28,7 @@ type Report struct {
 	OverallScore int            `json:"overall_score"`
 	OverallBand  string         `json:"overall_band"`
 	Servers      []ServerReport `json:"servers"`
+	Warnings     []string       `json:"warnings,omitempty"`
 }
 
 // score converts findings into a 0-100 risk score. Weights are summed and capped;

@@ -28,6 +28,28 @@ func (s Server) IsRemote() bool {
 	return s.URL != ""
 }
 
+const (
+	ScopeUser  = "user"
+	ScopeLocal = "local"
+)
+
+// Entry is one server definition together with where it was declared.
+type Entry struct {
+	Name    string
+	Server  Server
+	Scope   string
+	Project string
+}
+
+// Entries (stub).
+func (c *Config) Entries() []Entry {
+	var out []Entry
+	for n, s := range c.MCPServers {
+		out = append(out, Entry{Name: n, Server: s, Scope: ScopeUser})
+	}
+	return out
+}
+
 // LoadConfig reads and parses an MCP configuration file from disk.
 func LoadConfig(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)

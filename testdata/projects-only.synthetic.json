@@ -1,0 +1,10 @@
+{
+  "_comment": "Synthetic fixture: only project-scoped servers, no top-level mcpServers.",
+  "projects": {
+    "/fake/home/solo": {
+      "mcpServers": {
+        "gamma": { "command": "node", "args": ["/fake/opt/gamma.js"] }
+      }
+    }
+  }
+}
