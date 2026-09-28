@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -78,7 +79,13 @@ func Assess(source string, cfg *Config) Report {
 	}
 	byName := map[string][]*group{}
 	var names []string
-	for _, e := range cfg.Entries() {
+	entries := cfg.Entries()
+	rep.Collisions = collisions(entries)
+	collisionAt := map[[2]string]Collision{}
+	for _, c := range rep.Collisions {
+		collisionAt[[2]string{c.Name, c.Context}] = c
+	}
+	for _, e := range entries {
 		if _, ok := byName[e.Name]; !ok {
 			names = append(names, e.Name)
 		}
@@ -112,6 +119,25 @@ func Assess(source string, cfg *Config) Report {
 				f, warns := scopeFindings(name, g.origins)
 				findings = append(findings, f...)
 				rep.Warnings = append(rep.Warnings, warns...)
+			}
+			for _, o := range g.origins {
+				if o.Scope != ScopeProject {
+					continue
+				}
+				c, ok := collisionAt[[2]string{name, filepath.Clean(o.Project)}]
+				if !ok {
+					continue
+				}
+				f, warn := projectFindings(g.origins, c)
+				if f != nil {
+					findings = append(findings, *f)
+				}
+				rep.Warnings = append(rep.Warnings, warn)
+			}
+			// Scope findings are added here, after Evaluate filled Level, so fill it
+			// for every finding; otherwise JSON prints an empty severity.
+			for i := range findings {
+				findings[i].Level = findings[i].Severity.String()
 			}
 			sort.SliceStable(findings, func(i, j int) bool {
 				return findings[i].Severity > findings[j].Severity
@@ -226,10 +252,12 @@ func (r Report) WriteText(w io.Writer, minSeverity Severity) {
 	}
 }
 
+// hasLocalScope reports whether any server comes from a scope other than user
+// (local, or a .mcp.json project file), which is when origins are worth printing.
 func (r Report) hasLocalScope() bool {
 	for _, s := range r.Servers {
 		for _, o := range s.Origins {
-			if o.Scope == ScopeLocal {
+			if o.Scope != ScopeUser {
 				return true
 			}
 		}

@@ -29,12 +29,14 @@ func main() {
 		failOn      string
 		concurrency int
 		listRules   bool
+		projectRepo string
 	)
 	flag.BoolVar(&asJSON, "json", false, "emit the report as JSON")
 	flag.StringVar(&minLevel, "min-severity", "low", "hide findings below this level (info|low|medium|high)")
 	flag.StringVar(&failOn, "fail-on", "", "exit non-zero if any config reaches this band (low|medium|high|critical); for CI gating")
 	flag.IntVar(&concurrency, "concurrency", 8, "max config files assessed in parallel")
 	flag.BoolVar(&listRules, "list-rules", false, "list the registered rules and exit")
+	flag.StringVar(&projectRepo, "project", "", "repo path whose .mcp.json (project scope) is compared against each config; reports name collisions and which scope wins (local > project > user)")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: mcpscan [flags] <config.json | glob> [more configs...]")
 		flag.PrintDefaults()
@@ -58,7 +60,11 @@ func main() {
 		os.Exit(2)
 	}
 
-	scanner := NewScanner(WithConcurrency(concurrency))
+	opts := []Option{WithConcurrency(concurrency)}
+	if projectRepo != "" {
+		opts = append(opts, WithProjectRepo(projectRepo))
+	}
+	scanner := NewScanner(opts...)
 	reports, err := scanner.ScanFiles(context.Background(), paths)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

@@ -11,6 +11,7 @@ import (
 // concurrency and severity filtering without breaking the constructor signature.
 type Scanner struct {
 	concurrency int
+	projectRepo string // optional repo whose .mcp.json is compared (project scope)
 }
 
 // Option configures a Scanner.
@@ -44,6 +45,15 @@ func NewScanner(opts ...Option) *Scanner {
 func (sc *Scanner) ScanFiles(ctx context.Context, paths []string) ([]Report, error) {
 	reports := make([]Report, len(paths))
 
+	// The .mcp.json is read once and shared read-only by every goroutine.
+	var repo *ProjectFile
+	if sc.projectRepo != "" {
+		var err error
+		if repo, err = LoadProjectFile(sc.projectRepo); err != nil {
+			return nil, err
+		}
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(sc.concurrency)
 
@@ -57,6 +67,7 @@ func (sc *Scanner) ScanFiles(ctx context.Context, paths []string) ([]Report, err
 			if err != nil {
 				return err
 			}
+			cfg.Repo = repo
 			reports[i] = Assess(path, cfg)
 			return nil
 		})

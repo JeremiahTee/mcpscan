@@ -17,7 +17,9 @@ import (
 type Config struct {
 	MCPServers map[string]Server  `json:"mcpServers"`
 	Projects   map[string]Project `json:"projects"`
-	Repo       *ProjectFile       `json:"-"`
+	// Repo is a repository's .mcp.json (project scope), attached by the
+	// scanner when -project is given; it is not part of the JSON file.
+	Repo *ProjectFile `json:"-"`
 }
 
 // Project is one entry under "projects"; only its servers are modeled.
@@ -43,11 +45,17 @@ type Entry struct {
 }
 
 // Entries flattens every server in the config into a deterministic list:
-// user scope first, then each project by path, names sorted within each.
+// user scope first, then the attached .mcp.json (project scope, if any), then
+// each local-scope project by path, names sorted within each.
 func (c *Config) Entries() []Entry {
 	var out []Entry
 	for _, name := range sortedKeys(c.MCPServers) {
 		out = append(out, Entry{Name: name, Server: c.MCPServers[name], Scope: ScopeUser})
+	}
+	if c.Repo != nil {
+		for _, name := range sortedKeys(c.Repo.Servers) {
+			out = append(out, Entry{Name: name, Server: c.Repo.Servers[name], Scope: ScopeProject, Project: c.Repo.Repo})
+		}
 	}
 	paths := make([]string, 0, len(c.Projects))
 	for p := range c.Projects {

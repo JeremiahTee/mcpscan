@@ -221,3 +221,18 @@ func TestScannerWithoutProjectRepoHasNoCollisions(t *testing.T) {
 		t.Errorf("plain config should have no collisions, got %+v", reports[0].Collisions)
 	}
 }
+
+func TestScopeFindingsCarrySeverityLevelInJSON(t *testing.T) {
+	cfg := &Config{
+		MCPServers: map[string]Server{"dup": srvNode("/fake/opt/user.js")},
+		Projects:   map[string]Project{"/fake/other": {MCPServers: map[string]Server{"dup": srvNode("/fake/opt/local.js")}}},
+		Repo:       &ProjectFile{Repo: "/fake/repo", Servers: map[string]Server{"dup": srvNode("/fake/opt/project.js")}},
+	}
+	for _, s := range Assess("synthetic", cfg).Servers {
+		for _, f := range s.Findings {
+			if f.Level != f.Severity.String() {
+				t.Errorf("%s: Level %q, want %q (JSON severity must not be empty)", f.Rule, f.Level, f.Severity.String())
+			}
+		}
+	}
+}
