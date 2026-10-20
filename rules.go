@@ -7,7 +7,7 @@ import (
 )
 
 // This file defines the concrete risk rules and registers them into the package
-// registry (see rule.go). Each rule is small, single-purpose, and explainable —
+// registry (see rule.go). Each rule is small, single-purpose, and explainable:
 // every finding it emits carries the reason it fired.
 
 func init() {

@@ -41,7 +41,7 @@ func NewScanner(opts ...Option) *Scanner {
 // path, in the same order as the input. The scan is bounded by the configured
 // concurrency and cancellable via ctx: the first parse error cancels the rest and
 // is returned. This is the fan-out/fan-in pattern with a shared-nothing result
-// slice — each goroutine writes only its own index, so no lock is needed.
+// slice: each goroutine writes only its own index, so no lock is needed.
 func (sc *Scanner) ScanFiles(ctx context.Context, paths []string) ([]Report, error) {
 	reports := make([]Report, len(paths))
 
