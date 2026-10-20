@@ -1,6 +1,6 @@
 <!-- archdoc
 verified_at: 969042135489b779c5b2a1704e29c0c6c4edb54b
-covers: main.go config.go scanner.go rule.go rules.go launcher.go project.go report.go rules_test.go scope_test.go launcher_test.go pin_test.go project_test.go redact_test.go go.mod examples/sample.mcp.json testdata/scopes.synthetic.json testdata/projects-only.synthetic.json
+covers: main.go config.go scanner.go rule.go rules.go launcher.go project.go report.go rules_test.go scope_test.go launcher_test.go pin_test.go project_test.go redact_test.go go.mod examples/sample.mcp.json testdata/scopes.synthetic.json testdata/projects-only.synthetic.json .github/workflows/ci.yml
 -->
 # mcpscan: architecture
 
