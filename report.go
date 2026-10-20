@@ -218,7 +218,7 @@ func scopeFindings(name string, origins []Origin) ([]Finding, []string) {
 // scope warnings are always shown. Origins are printed only when the config has
 // local-scope servers, so a plain single-scope config renders exactly as before.
 func (r Report) WriteText(w io.Writer, minSeverity Severity) {
-	fmt.Fprintf(w, "mcpscan — %s\n", r.Source)
+	fmt.Fprintf(w, "mcpscan: %s\n", r.Source)
 	fmt.Fprintf(w, "overall risk: %d/100 (%s) across %d server(s)\n", r.OverallScore, r.OverallBand, len(r.Servers))
 	for _, warn := range r.Warnings {
 		fmt.Fprintf(w, "warning: %s\n", warn)

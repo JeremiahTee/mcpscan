@@ -8,7 +8,7 @@
 // and cleartext transports. Every finding carries the reason it fired, so the
 // score is auditable rather than a black box.
 //
-// Multiple config files (or globs) can be scanned at once, concurrently — useful
+// Multiple config files (or globs) can be scanned at once, concurrently. Useful
 // for auditing an entire team or fleet of developer machines in one pass.
 package main
 
