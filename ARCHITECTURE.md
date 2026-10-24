@@ -102,7 +102,6 @@ go run . -project <repo> <config.json>    # .mcp.json collisions
 - One unreadable or malformed config aborts the whole fleet scan. No partial report is returned.
 - `FILESYSTEM` and `DATA_SENSITIVE` key off the server's name, so a filesystem server under another name gets through.
 - The secret regex ends in `\b`, so names like `ACCESS_TOKEN_ID` probably don't match (`_` is a word char) [UNVERIFIED, not tested].
-- Findings with equal severity come out in map-iteration order (env keys, servers before the sort), so text output may differ between runs [UNVERIFIED].
 - There are no tests for `main.go` or `scanner.go` (concurrency, cancellation); `WriteText` is covered only by the scope tests.
 - `.mcp.json` is compared only when `-project` is given, and the same repo is applied to every config in a fleet scan. Its path is matched to `projects.<path>` keys after `filepath.Abs` + `EvalSymlinks`; whether Claude Code writes those keys symlink-resolved is [UNVERIFIED].
 - `SCOPE_DUPLICATE` and `SCOPE_SHADOWED` are Info, so text output hides them under the default `-min-severity low`; the warning lines always show.
