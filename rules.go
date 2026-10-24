@@ -1,8 +1,10 @@
 package main
 
 import (
+	"maps"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -26,18 +28,21 @@ var knownLaunchers = map[string]bool{
 	"uv": true, "uvx": true, "docker": true, "deno": true, "bun": true,
 }
 
-var dataSensitiveServers = map[string]string{
-	"github": "source code and repository access", "gitlab": "source code and repository access",
-	"slack": "internal messages", "postgres": "database contents", "mysql": "database contents",
-	"sqlite": "database contents", "filesystem": "local files", "gdrive": "cloud documents",
-	"drive": "cloud documents", "notion": "internal documents", "jira": "internal tickets",
-	"sentry": "production error data", "aws": "cloud infrastructure", "stripe": "payment data",
+// dataSensitiveServers is a slice, not a map, so a name matching several keys
+// (e.g. "github-postgres") always gets the first match's reason.
+var dataSensitiveServers = []struct{ key, reason string }{
+	{"github", "source code and repository access"}, {"gitlab", "source code and repository access"},
+	{"slack", "internal messages"}, {"postgres", "database contents"}, {"mysql", "database contents"},
+	{"sqlite", "database contents"}, {"filesystem", "local files"}, {"gdrive", "cloud documents"},
+	{"drive", "cloud documents"}, {"notion", "internal documents"}, {"jira", "internal tickets"},
+	{"sentry", "production error data"}, {"aws", "cloud infrastructure"}, {"stripe", "payment data"},
 }
 
 // ruleSecretInEnv: a credential handed to a subprocess widens the blast radius.
 func ruleSecretInEnv(name string, s Server) []Finding {
 	var out []Finding
-	for k := range s.Env {
+	// Sorted keys: map order is random, and findings must come out the same every run.
+	for _, k := range slices.Sorted(maps.Keys(s.Env)) {
 		if secretPattern.MatchString(k) {
 			out = append(out, Finding{
 				Rule: "SECRET_IN_ENV", Severity: High,
@@ -175,12 +180,12 @@ func ruleFilesystem(name string, s Server) []Finding {
 
 func ruleDataSensitive(name string, s Server) []Finding {
 	lname := strings.ToLower(name)
-	for key, reason := range dataSensitiveServers {
-		if strings.Contains(lname, key) {
+	for _, d := range dataSensitiveServers {
+		if strings.Contains(lname, d.key) {
 			return []Finding{{
 				Rule: "DATA_SENSITIVE", Severity: Low,
 				Title:  "Touches sensitive data",
-				Detail: "Name suggests access to " + reason + ". Scope its permissions to the minimum this workflow needs.",
+				Detail: "Name suggests access to " + d.reason + ". Scope its permissions to the minimum this workflow needs.",
 			}}
 		}
 	}
