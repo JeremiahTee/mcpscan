@@ -43,6 +43,19 @@ func main() {
 	}
 	flag.Parse()
 
+	// Reject unknown values up front: a typo in -fail-on would otherwise look up
+	// rank 0 and fail every CI run, and a bad -min-severity would show everything.
+	minSev, ok := parseSeverity(minLevel)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "error: unknown -min-severity %q (valid: info, low, medium, high)\n", minLevel)
+		os.Exit(2)
+	}
+	gate := strings.ToLower(failOn)
+	if gate != "" && !validGate(gate) {
+		fmt.Fprintf(os.Stderr, "error: unknown -fail-on %q (valid: low, medium, high, critical)\n", failOn)
+		os.Exit(2)
+	}
+
 	if listRules {
 		for _, r := range Rules() {
 			fmt.Println(r.ID)
@@ -79,16 +92,15 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		min := parseSeverity(minLevel)
 		for _, r := range reports {
-			r.WriteText(os.Stdout, min)
+			r.WriteText(os.Stdout, minSev)
 		}
 		if len(reports) > 1 {
 			fmt.Printf("fleet verdict: %s (worst of %d configs)\n", WorstBand(reports), len(reports))
 		}
 	}
 
-	if failOn != "" && bandAtLeast(WorstBand(reports), strings.ToLower(failOn)) {
+	if gate != "" && bandAtLeast(WorstBand(reports), gate) {
 		os.Exit(3)
 	}
 }
@@ -116,20 +128,31 @@ func expandPaths(args []string) ([]string, error) {
 	return paths, nil
 }
 
-func parseSeverity(s string) Severity {
+// parseSeverity maps a -min-severity value to a Severity; ok is false for an
+// unknown value.
+func parseSeverity(s string) (sev Severity, ok bool) {
 	switch strings.ToLower(s) {
 	case "high":
-		return High
+		return High, true
 	case "medium":
-		return Medium
+		return Medium, true
 	case "low":
-		return Low
+		return Low, true
+	case "info":
+		return Info, true
 	default:
-		return Info
+		return Info, false
 	}
 }
 
 var bandRank = map[string]int{"clean": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+// validGate reports whether band is a usable -fail-on value. "clean" is a real
+// band but is rejected: every report is at least clean, so the gate would always fail.
+func validGate(band string) bool {
+	rank, ok := bandRank[band]
+	return ok && rank > bandRank["clean"]
+}
 
 func bandAtLeast(got, threshold string) bool {
 	return bandRank[got] >= bandRank[threshold]

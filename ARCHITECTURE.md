@@ -39,7 +39,7 @@ A single-package Go CLI (`package main`, module `github.com/JeremiahTee/mcpscan`
 
 | File | Job |
 |---|---|
-| `main.go` | Flags (`-json`, `-min-severity`, `-fail-on`, `-concurrency`, `-list-rules`, `-project`), glob expansion, output, exit codes (1 error, 2 no paths, 3 fail-on hit). |
+| `main.go` | Flags (`-json`, `-min-severity`, `-fail-on`, `-concurrency`, `-list-rules`, `-project`), glob expansion, output, exit codes (1 error, 2 usage: no paths or an unknown `-fail-on` / `-min-severity` value, 3 fail-on hit). Flag values are validated before any file is read. |
 | `config.go` | `Config` / `Project` / `Server` structs; scopes `user` (top-level `mcpServers`) and `local` (`projects.<path>.mcpServers`), plus `Config.Repo` (not from JSON) for `project`; `Entries` flattens user, project, local deterministically; `LoadConfig` errors only if no scope has a server; `IsRemote` = `URL != ""`. |
 | `scanner.go` | `Scanner` with functional options `WithConcurrency` (default 8, floor 1) and `WithProjectRepo`; `ScanFiles` reads the `.mcp.json` once before the fan-out (shared read-only), fan-out/fan-in, first error cancels the rest; `WorstBand`. |
 | `rule.go` | `Severity` (Info/Low/Medium/High) and weights (0/10/20/40), `Finding`, `Rule`, the `registry`, `Register`, `Rules`, `Evaluate`. |
@@ -98,7 +98,6 @@ go run . -project <repo> <config.json>    # .mcp.json collisions
 ## Known gaps
 
 - `-list-rules` prints the six registry ids (`TRANSPORT`, `COMMAND`, `DOCKER`, `FILESYSTEM`...), but reports and the README table use the eleven finding ids. The two naming schemes don't match.
-- `-fail-on` with a value outside `bandRank` maps to rank 0, so `bandAtLeast` is always true and any typo exits 3 (read from `main.go`; not executed).
 - `filepath.Glob` has no `**` and Go doesn't expand `~`, so the README's `'~/.config/**/mcp.json'` example would likely match nothing and fall back to a literal path that doesn't exist [UNVERIFIED, not executed].
 - One unreadable or malformed config aborts the whole fleet scan. No partial report is returned.
 - `FILESYSTEM` and `DATA_SENSITIVE` key off the server's name, so a filesystem server under another name gets through.
